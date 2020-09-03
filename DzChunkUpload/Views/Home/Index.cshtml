@@ -1,0 +1,78 @@
+﻿<div class="jumbotron">
+    <h1>ASP.NET</h1>
+    <p class="lead">ASP.NET is a free web framework for building great Web sites and Web applications using HTML, CSS, and JavaScript.</p>
+    <p>
+        <a href="https://asp.net" class="btn btn-primary btn-lg">Learn more &raquo;</a>
+    </p>
+</div>
+<div class="row">
+    <form class="dropzone" id="dz-upload" method="post" action="api/chunk-upload" enctype="multipart/form-data"></form>
+</div>
+@section scripts {
+    <script type="text/javascript">
+            let dz = new Dropzone('#dz-upload', 
+            { 
+                url: "/api/ChunkedUpload", 
+                params: function (files, xhr, chunk) {
+                    if (chunk) {
+                        return {
+                            dzUuid: chunk.file.upload.uuid,
+                            dzChunkIndex: chunk.index,
+                            dzTotalFileSize: chunk.file.size,
+                            dzCurrentChunkSize: chunk.dataBlock.data.size,
+                            dzTotalChunkCount: chunk.file.upload.totalChunkCount,
+                            dzChunkByteOffset: chunk.index * this.options.chunkSize,
+                            dzChunkSize: this.options.chunkSize,
+                            dzFilename: chunk.file.name,
+                        }
+                    }
+                },
+                parallelUploads: 1,  // since we're using a global 'currentFile', we could have issues if parallelUploads > 1, so we'll make it = 1
+                maxFiles: 1,
+                maxFilesize: 1024,   // max individual file size 1024 MB
+                chunking: true,      // enable chunking
+                forceChunking: true, // forces chunking when file.size < chunkSize
+                parallelChunkUploads: true, // allows chunks to be uploaded in parallel (this is independent of the parallelUploads option)
+                chunkSize: 1048576,  // chunk size 1,000,000 bytes (~1MB)
+                retryChunks: true,   // retry chunks on failure
+                retryChunksLimit: 3, // retry maximum of 3 times (default is 3)
+                chunksUploaded: function (file, done) {
+                            // All chunks have been uploaded. Perform any other actions
+                            currentFile = file;
+                
+                            // This calls server-side code to merge all chunks for the currentFile
+                            $.ajax({
+                                type: "PUT",
+                                url: "/api/ChunkedUpload?dzIdentifier=" + currentFile.upload.uuid
+                                    + "&fileName=" + encodeURIComponent(currentFile.name)
+                                    + "&expectedBytes=" + currentFile.size
+                                    + "&totalChunks=" + currentFile.upload.totalChunkCount,
+                                success: function (data) {
+                                    // Must call done() if successful
+                                    done();
+                                },
+                                error: function (msg) {
+                                    currentFile.accepted = false;
+                                    myDropzone._errorProcessing([currentFile], msg.responseText);
+                                }
+                             });
+                        },
+                        init: function() {
+                            // This calls server-side code to delete temporary files created if the file failed to upload
+                            // This also gets called if the upload is canceled
+                            this.on('error', function(file, errorMessage) {
+                                $.ajax({
+                                    type: "DELETE",
+                                    url: "/api/ChunkedUpload?dzIdentifier=" + file.upload.uuid
+                                        + "&fileName=" + encodeURIComponent(file.name)
+                                        + "&expectedBytes=" + file.size
+                                        + "&totalChunks=" + file.upload.totalChunkCount,
+                                    success: function (data) {
+                                        // nothing
+                                    }
+                                });
+                            });
+                        }
+            });
+    </script>
+}
